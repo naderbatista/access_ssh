@@ -1,0 +1,169 @@
+@startuml CMM - Gerenciador de Usuários
+
+skinparam backgroundColor #F0F5F5
+skinparam defaultFontName Segoe UI
+skinparam defaultFontSize 12
+
+skinparam sequence {
+    ArrowColor #007E7A
+    ActorBorderColor #007E7A
+    LifeLineBorderColor #007E7A
+    ParticipantBackgroundColor #ffffff
+    ParticipantBorderColor #007E7A
+    ParticipantFontColor #1a1a1a
+    NoteBackgroundColor #FFF9E6
+    NoteBorderColor #ECB11F
+    DividerBackgroundColor #E8F4F4
+    DividerBorderColor #007E7A
+    DividerFontColor #007E7A
+}
+
+skinparam actor {
+    BackgroundColor #D4EDEB
+    BorderColor #007E7A
+    FontColor #1a1a1a
+}
+
+title CMM — Fluxo Técnico da Aplicação\n<size:10>Django 4.2 + Gunicorn + Nginx | SSH (Paramiko) + Telnet (telnetlib)</size>
+
+actor "Operador\n(Navegador)" as U
+participant "Frontend\n(app.js)" as FE
+participant "Nginx\n(proxy)" as NGX
+participant "Django / Gunicorn\n(views.py)" as BE
+participant "SSHService /\nTelnetService" as SVC
+participant "CommandBuilder\n(command_builder.py)" as CB
+participant "Servidor\nRemoto (Linux)" as SRV
+
+== Autenticação ==
+
+U -> FE : Seleciona Protocolo (SSH|Telnet)\ne informa Host, Porta, Usuário, Senha
+FE -> NGX : POST /login/
+NGX -> BE : (proxy)
+
+BE -> BE : Valida LoginForm\n(protocol, host, port, user, pass)
+
+alt Protocolo = SSH
+    BE -> SVC : test_ssh_connection(host, port, user, pass)
+    SVC -> SRV : Abre conexão SSH (Paramiko)
+else Protocolo = Telnet
+    BE -> SVC : test_telnet_connection(host, port, user, pass)
+    SVC -> SRV : Abre conexão Telnet (telnetlib)\nFaz login interativo (prompt login:/Password:)
+end
+
+SRV --> SVC : Autenticado
+SVC --> BE : OK
+
+BE -> SVC : check_is_root (exec "id -u")
+SRV --> SVC : "0" ou UID comum
+SVC --> BE : is_root: true/false
+
+BE -> BE : Salva sessão:\n(authenticated, protocol, host, port,\nis_root, common_user, common_pass)
+BE --> FE : {success: true, is_root: bool}
+FE -> U : Desbloqueia painel\nAtualiza topbar: "user@host [SSH|Telnet]"
+
+== Execução (usuário NÃO root) ==
+
+U -> FE : Preenche campos, clica Executar
+FE -> FE : Valida confirmação de senha\n(create / password)
+
+opt action = delete
+    FE -> U : Modal "Confirmar Exclusão"
+    U -> FE : Confirma
+end
+
+FE -> U : Modal "Senha Root" (su)
+U -> FE : Informa senha root
+FE -> NGX : POST /execute/\n{action, target_username, target_password,\ngroup_name, root_password}
+NGX -> BE : (proxy)
+
+BE -> BE : Verifica sessão autenticada
+BE -> CB : build_*_command(data)\nshlex.quote() em todos os valores
+CB --> BE : Comando sanitizado
+
+opt action = create ou group
+    alt Protocolo = SSH
+        BE -> SVC : run_command_via_su() → "cut -d: -f1 /etc/group"
+    else Protocolo = Telnet
+        BE -> SVC : run_command_via_su_telnet() → "cut -d: -f1 /etc/group"
+    end
+    SVC -> SRV : Verifica grupos
+    SRV --> SVC : Lista de grupos
+    SVC --> BE : grupos disponíveis
+    alt Grupo não existe
+        BE --> FE : {success: false, group_not_found: true}
+        FE -> U : Oferece listar grupos
+    end
+end
+
+alt Protocolo = SSH
+    BE -> SVC : run_command_via_su(host, port,\ncommon_user, common_pass, root_pass, cmd)
+    note right of SVC
+      Shell interativo via Paramiko:
+      su - → senha root → marcador → comando
+    end note
+else Protocolo = Telnet
+    BE -> SVC : run_command_via_su_telnet(host, port,\ncommon_user, common_pass, root_pass, cmd)
+    note right of SVC
+      Shell interativo via telnetlib:
+      su - → senha root → marcador → comando
+    end note
+end
+
+SVC -> SRV : Executa comando como root
+SRV --> SVC : stdout + stderr
+SVC --> BE : (stdout, stderr)
+BE --> FE : {success, message, data}
+FE -> U : Exibe resultado no console\nBotão "📷 PNG" ativado
+
+== Execução (usuário root) ==
+
+U -> FE : Preenche campos, clica Executar
+FE -> NGX : POST /execute/ (sem root_password)
+NGX -> BE : (proxy)
+BE -> CB : build_*_command(data)
+CB --> BE : Comando sanitizado
+
+alt Protocolo = SSH
+    BE -> SVC : run_ssh_command(host, port, user, pass, cmd)
+else Protocolo = Telnet
+    BE -> SVC : run_telnet_command(host, port, user, pass, cmd)
+end
+
+SVC -> SRV : Executa diretamente (já é root)
+SRV --> SVC : stdout + stderr
+SVC --> BE : (stdout, stderr)
+BE --> FE : {success, message, data}
+FE -> U : Exibe resultado no console
+
+== Salvar resultado como PNG ==
+
+U -> FE : Clica "📷 PNG"
+FE -> FE : html2canvas(#result-console)\nscale=2, fundo escuro
+FE -> U : Download "resultado-<timestamp>.png"
+
+== Listar grupos (grupo não encontrado) ==
+
+FE -> NGX : POST /groups/ {root_password?}
+NGX -> BE : (proxy)
+
+alt Protocolo = SSH
+    BE -> SVC : run_ssh_command / run_command_via_su\n"cut -d: -f1 /etc/group | sort"
+else Protocolo = Telnet
+    BE -> SVC : run_telnet_command / run_command_via_su_telnet\n"cut -d: -f1 /etc/group | sort"
+end
+
+SRV --> SVC : Lista de grupos
+SVC --> BE : stdout
+BE --> FE : {success: true, groups: [...]}
+FE -> U : Exibe grupos separados por vírgula no console
+
+== Desconexão ==
+
+U -> FE : Clica em Desconectar
+FE -> NGX : POST /logout/
+NGX -> BE : (proxy)
+BE -> BE : request.session.flush()
+BE --> FE : {success: true}
+FE -> U : Reseta tela\nTopbar → "desconectado"\nBloqueia painel de operações
+
+@enduml

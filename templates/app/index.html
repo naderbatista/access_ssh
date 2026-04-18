@@ -1,0 +1,141 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CMM — Central de Gerência</title>
+    <link rel="stylesheet" href="{% static 'app/css/style.css' %}">
+</head>
+<body data-is-root="{{ is_root|yesno:'true,false' }}" data-ssh-port="{{ ssh_port }}" data-telnet-port="{{ telnet_port }}">
+
+<div class="app">
+
+    <div class="topbar">
+        <div class="topbar-brand">
+            <div class="topbar-brand-text">
+                <span class="topbar-title">CMU/CMM</span>
+                <span class="topbar-subtitle">Gerência de Usuários</span>
+            </div>
+        </div>
+        <span class="topbar-spacer"></span>
+        <span class="topbar-badge" id="topbar-proto-label">SSH</span>
+        <span class="topbar-status" id="conn-status">desconectado</span>
+    </div>
+
+    <!-- CONEXÃO -->
+    <div class="panel" id="auth-panel">
+        <div class="panel-title">Conexão</div>
+        <form id="login-form" novalidate>
+            {% csrf_token %}
+
+            <!-- Linha 1: Protocolo + Host + Porta -->
+            <div class="form-row">
+                <div class="proto-selector">
+                    <span class="proto-label">Protocolo</span>
+                    <div class="proto-opts">
+                        <label class="proto-opt">
+                            <input type="radio" name="protocol" value="ssh" id="proto-ssh" checked>
+                            <span>SSH</span>
+                        </label>
+                        <label class="proto-opt">
+                            <input type="radio" name="protocol" value="telnet" id="proto-telnet">
+                            <span>Telnet</span>
+                        </label>
+                    </div>
+                </div>
+                <label class="label-grow">Host remoto
+                    <input type="text" id="conn_host" name="host" value="{{ conn_host }}" autocomplete="off" required>
+                </label>
+                <label>Porta
+                    <input type="number" id="conn_port" name="port" value="{{ ssh_port }}" min="1" max="65535" style="width:80px;" autocomplete="off" required>
+                </label>
+            </div>
+
+            <!-- Linha 2: Credenciais + Botões -->
+            <div class="form-row">
+                <label>Usuário <input type="text" id="common_username" name="common_username" autocomplete="off" required></label>
+                <label>Senha <input type="password" id="common_password" name="common_password" autocomplete="off" required></label>
+                <button type="submit" class="btn btn--primary" id="btn-login"><span class="btn-label">Conectar</span><span class="btn-spinner hidden"></span></button>
+                <button type="button" class="btn btn--flat" id="btn-logout">Desconectar</button>
+            </div>
+        </form>
+        <div id="auth-result" class="msg hidden"></div>
+    </div>
+
+    <!-- OPERAÇÕES -->
+    <div class="panel disabled-section" id="admin-panel">
+        <div class="lock-overlay" id="admin-overlay">Conecte-se ao servidor para usar</div>
+
+        <nav class="tabs" id="action-tabs">
+            <a class="tab active" data-action="create">Adicionar</a>
+            <a class="tab" data-action="password">Alterar Senha</a>
+            <a class="tab" data-action="group">Alterar Grupo</a>
+            <a class="tab" data-action="delete">Excluir Usuário</a>
+        </nav>
+
+        <form id="operation-form" class="op-form" novalidate>
+            {% csrf_token %}
+            <input type="hidden" id="action-select" name="action" value="create">
+
+            <div class="form-row" id="fields-area">
+                <label id="field-username-group">Login <input type="text" id="target_username" name="target_username" autocomplete="off" required></label>
+                <label id="field-password-group">Senha
+                    <div class="pw-row">
+                        <input type="password" id="target_password" name="target_password" autocomplete="off">
+                        <button type="button" class="btn-eye" id="toggle-target-pw" title="Mostrar/ocultar">&#x1f441;</button>
+                    </div>
+                </label>
+                <label id="field-confirm-group">Confirmar Senha
+                    <div class="pw-row">
+                        <input type="password" id="target_password_confirm" autocomplete="off">
+                        <button type="button" class="btn-eye" id="toggle-target-pw-confirm" title="Mostrar/ocultar">&#x1f441;</button>
+                    </div>
+                </label>
+                <label id="field-group-group">Grupo <input type="text" id="group_name" name="group_name" autocomplete="off"></label>
+            </div>
+
+            <div class="form-row">
+                <button type="submit" class="btn btn--primary" id="btn-execute"><span class="btn-label">Executar</span><span class="btn-spinner hidden"></span></button>
+            </div>
+        </form>
+
+        <div id="operation-result" class="msg hidden"></div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <pre id="result-console" class="console hidden" style="flex:1;"></pre>
+            <button type="button" class="btn btn--flat hidden" id="btn-print-result" title="Salvar como imagem PNG" style="height:32px;">📷 PNG</button>
+        </div>
+    </div>
+
+</div>
+
+<!-- MODAL — SENHA ROOT -->
+<div id="root-modal" class="modal-bg hidden">
+    <div class="modal">
+        <div class="modal-title">Senha Root</div>
+        <p class="modal-desc">Informe a senha root para executar esta operação.</p>
+        <label>Senha <input type="password" id="modal_root_password" autocomplete="off"></label>
+        <div id="modal-error" class="msg msg--error hidden"></div>
+        <div class="modal-btns">
+            <button type="button" class="btn btn--flat" id="modal-cancel">Cancelar</button>
+            <button type="button" class="btn btn--primary" id="modal-confirm"><span class="btn-label">OK</span><span class="btn-spinner hidden"></span></button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL — CONFIRMAR EXCLUSÃO -->
+<div id="delete-modal" class="modal-bg hidden">
+    <div class="modal">
+        <div class="modal-title">Excluir Usuário</div>
+        <p class="modal-desc">O usuário <strong id="delete-target-name"></strong> será removido permanentemente (incluindo home). Continuar?</p>
+        <div class="modal-btns">
+            <button type="button" class="btn btn--flat" id="delete-cancel">Cancelar</button>
+            <button type="button" class="btn btn--danger" id="delete-confirm">Excluir</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoeqMV/TJlSKda6FXzoEyYGjTe+vXA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="{% static 'app/js/app.js' %}"></script>
+</body>
+</html>

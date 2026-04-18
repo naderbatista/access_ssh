@@ -1,0 +1,124 @@
+@startuml CMM - Visão Geral
+
+skinparam backgroundColor #F0F5F5
+skinparam defaultFontName Segoe UI
+skinparam defaultFontSize 13
+
+skinparam sequence {
+    ArrowColor #007E7A
+    ActorBorderColor #007E7A
+    LifeLineBorderColor #adb5bd
+    ParticipantBackgroundColor #ffffff
+    ParticipantBorderColor #007E7A
+    ParticipantFontColor #1a1a1a
+    NoteBackgroundColor #FFF9E6
+    NoteBorderColor #ECB11F
+    DividerBackgroundColor #E8F4F4
+    DividerBorderColor #007E7A
+    DividerFontColor #007E7A
+}
+
+skinparam actor {
+    BackgroundColor #D4EDEB
+    BorderColor #007E7A
+    FontColor #1a1a1a
+}
+
+title Como a ferramenta funciona\n<size:11>(visão simplificada para apresentação)</size>
+
+actor "Técnico\n(usuário da ferramenta)" as TEC
+participant "Tela\n(navegador web)" as TELA
+participant "Sistema\n(servidor da aplicação)" as SIS
+participant "Servidor\nde Destino (Linux)" as DEST
+
+note over TEC, DEST
+  O técnico acessa a ferramenta pelo navegador, como um site qualquer.
+  A ferramenta se conecta ao servidor Linux via SSH (criptografado) ou Telnet.
+  O protocolo, endereço e porta são informados na própria tela — sem editar arquivos de configuração.
+  Nenhuma senha fica exposta ou gravada em banco de dados.
+end note
+
+== 1. Entrar na ferramenta ==
+
+TEC -> TELA : Abre o sistema no navegador
+TEC -> TELA : Escolhe o protocolo: SSH ou Telnet
+TEC -> TELA : Informa o endereço\ne porta do servidor de destino
+TEC -> TELA : Informa seu usuário e senha
+TELA -> SIS : Envia os dados de conexão\nde forma segura
+SIS -> DEST : Testa a conexão com\no servidor de destino
+DEST --> SIS : Conexão aceita ou recusada
+
+alt Credenciais corretas
+    SIS --> TELA : Acesso liberado
+    TELA -> TEC : Exibe o painel de operações\nTopbar mostra: usuário@host [SSH|Telnet]
+    note right of TEC
+      Se o técnico entrar com um usuário
+      administrador (root), não precisará
+      informar senha extra nas operações.
+    end note
+else Credenciais incorretas
+    SIS --> TELA : Mensagem de erro
+    TELA -> TEC : Avisa e solicita nova tentativa
+end
+
+== 2. Escolher e executar uma operação ==
+
+TEC -> TELA : Seleciona a ação desejada:\n• Adicionar usuário\n• Alterar senha\n• Alterar grupo\n• Excluir usuário
+TEC -> TELA : Preenche os campos necessários\n(nome de usuário, senha, grupo...)
+TELA -> TEC : Campos de senha com botão\nde mostrar/ocultar
+
+alt Técnico NÃO é administrador
+    TELA -> TEC : Solicita a senha de administrador\n(em uma janela separada)
+    TEC -> TELA : Informa a senha
+end
+
+alt Ação é excluir usuário
+    TELA -> TEC : Pede confirmação:\n"Tem certeza que deseja excluir?"
+    TEC -> TELA : Confirma a exclusão
+end
+
+TELA -> SIS : Envia a operação com\nas credenciais necessárias
+SIS -> SIS : Verifica e sanitiza os dados\nantes de executar qualquer coisa
+
+opt Operação envolve grupo de usuários
+    SIS -> DEST : Consulta os grupos\nexistentes no servidor
+    DEST --> SIS : Lista de grupos disponíveis
+    alt Grupo informado não existe
+        SIS --> TELA : Avisa que o grupo não existe
+        TELA -> TEC : Oferece ver os grupos\ndisponíveis
+        TEC -> TELA : Solicita lista de grupos
+        TELA -> TEC : Exibe os grupos existentes
+    end
+end
+
+SIS -> DEST : Executa a operação\nno servidor Linux
+DEST --> SIS : Resultado — sucesso ou mensagem de erro
+SIS --> TELA : Envia o resultado
+TELA -> TEC : Exibe no console da tela
+
+== 3. Salvar o resultado ==
+
+TEC -> TELA : Clica em "📷 PNG"\ncaso queira guardar ou compartilhar
+TELA -> TELA : Gera imagem da tela de resultado
+TELA -> TEC : Download automático do arquivo .png
+
+note right of TEC
+  Útil para anexar em chamados,
+  enviar por e-mail ou colar em relatório.
+end note
+
+== 4. Sair da ferramenta ==
+
+TEC -> TELA : Clica em "Desconectar"
+TELA -> SIS : Solicita encerramento da sessão
+SIS -> SIS : Apaga todas as credenciais\nda memória (sessão encerrada)
+SIS --> TELA : Confirmação
+TELA -> TEC : Tela volta ao estado inicial\n(desconectado)
+
+note over TEC, DEST
+  As credenciais existem apenas durante a sessão ativa.
+  Ao desconectar ou após 1 hora de inatividade, tudo é apagado automaticamente.
+  O sistema roda em container Docker — sem necessidade de instalação nos computadores dos técnicos.
+end note
+
+@enduml

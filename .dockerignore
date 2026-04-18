@@ -1,0 +1,35 @@
+# Git / controle de versão
+.git
+.gitignore
+
+# Segredos — nunca entram na imagem
+.env
+
+# Sessões locais de desenvolvimento
+.sessions/
+
+# Estáticos já coletados (rebuilding via collectstatic no Dockerfile)
+staticfiles/
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# Logs locais
+*.log
+
+# Documentação / diagramas (não necessários em runtime)
+*.puml
+README.md
