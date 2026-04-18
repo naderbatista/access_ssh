@@ -39,11 +39,11 @@ ENV DJANGO_SETTINGS_MODULE=config.settings \
 # Coletar arquivos estáticos
 RUN python manage.py collectstatic --noinput
 
-EXPOSE 8000
+EXPOSE 8008
 
 # Gunicorn: 2 workers síncronos são suficientes para uso corporativo interno
 CMD ["gunicorn", "config.wsgi:application", \
-     "--bind", "0.0.0.0:8000", \
+     "--bind", "0.0.0.0:8008", \
      "--workers", "2", \
      "--timeout", "120", \
      "--access-logfile", "-", \
